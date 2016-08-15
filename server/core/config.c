@@ -160,6 +160,7 @@ static char *listener_params[] =
     "ssl_key",
     "ssl_version",
     "ssl_cert_verify_depth",
+    "inject_service_user",
     NULL
 };
 
@@ -2796,6 +2797,7 @@ int create_new_listener(CONFIG_CONTEXT *obj, bool startnow)
     char *protocol = config_get_value(obj->parameters, "protocol");
     char *socket = config_get_value(obj->parameters, "socket");
     char *authenticator = config_get_value(obj->parameters, "authenticator");
+    char *inject_service_user = config_get_value(obj->parameters, "inject_service_user");
 
     if (service_name && protocol && (socket || port))
     {
@@ -2807,14 +2809,25 @@ int create_new_listener(CONFIG_CONTEXT *obj, bool startnow)
             {
                 if (serviceHasProtocol(service, protocol, address, 0))
                 {
-                    MXS_ERROR("Listener '%s' for service '%s' already has a socket at '%s.",
+                    MXS_ERROR("Listener '%s': Service '%s' already has a socket at '%s'.",
                               obj->object, service_name, socket);
+                    error_count++;
+                }
+                else if (serviceAddProtocol(service, obj->object, protocol, socket, 0,
+                                            authenticator, ssl_info) == 0)
+                {
+                    MXS_ERROR("Listener '%s': Failed to add protocol '%s' to service '%s'",
+                              obj->object, protocol, service->name);
                     error_count++;
                 }
                 else
                 {
-                    serviceAddProtocol(service, obj->object, protocol, socket, 0,
-                                       authenticator, ssl_info);
+                    /** Protocol successfully added */
+                    if (inject_service_user)
+                    {
+                        service->ports->inject_service_user = config_truth_value(inject_service_user);
+                    }
+
                     if (startnow)
                     {
                         serviceStartProtocol(service, protocol, 0);
@@ -2826,16 +2839,25 @@ int create_new_listener(CONFIG_CONTEXT *obj, bool startnow)
             {
                 if (serviceHasProtocol(service, protocol, address, atoi(port)))
                 {
-                    MXS_ERROR("Listener '%s', for service '%s', already have port %s.",
-                              obj->object,
-                              service_name,
-                              port);
+                    MXS_ERROR("Listener '%s': Service '%s' already has a listener on port %s.",
+                              obj->object, service_name, port);
+                    error_count++;
+                }
+                else if (serviceAddProtocol(service, obj->object, protocol, address,
+                                            atoi(port), authenticator, ssl_info) == 0)
+                {
+                    MXS_ERROR("Listener '%s': Failed to add protocol '%s' to service '%s'",
+                              obj->object, protocol, service->name);
                     error_count++;
                 }
                 else
                 {
-                    serviceAddProtocol(service, obj->object, protocol, address,
-                                       atoi(port), authenticator, ssl_info);
+                    /** Protocol successfully added */
+                    if (inject_service_user)
+                    {
+                        service->ports->inject_service_user = config_truth_value(inject_service_user);
+                    }
+
                     if (startnow)
                     {
                         serviceStartProtocol(service, protocol, atoi(port));
@@ -2850,8 +2872,7 @@ int create_new_listener(CONFIG_CONTEXT *obj, bool startnow)
         }
         else
         {
-            MXS_ERROR("Listener '%s', service '%s' not found.", obj->object,
-                      service_name);
+            MXS_ERROR("Listener '%s': Service '%s' not found.", obj->object, service_name);
             error_count++;
         }
     }
